@@ -1,0 +1,5 @@
+{
+  "name": "FinAgent Pro: Multi-Agent Financial Intelligence",
+  "description": "A sophisticated multi-agent financial analysis platform that uses Gemini 3 Pro to gather market data, perform sentiment analysis, and generate professional investment memos with Google Search grounding.",
+  "requestFramePermissions": []
+}

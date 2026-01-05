@@ -1,0 +1,190 @@
+
+import React from 'react';
+import { AnalysisResult } from '../types';
+import { 
+  TrendingUp, TrendingDown, Minus, 
+  ExternalLink, FileText, BarChart3, 
+  Activity, Newspaper, Star, Sparkles
+} from 'lucide-react';
+import { 
+  AreaChart, Area, XAxis, YAxis, 
+  CartesianGrid, Tooltip, ResponsiveContainer 
+} from 'recharts';
+
+interface Props {
+  result: AnalysisResult;
+  isWatched: boolean;
+  onToggleWatchlist: (ticker: string) => void;
+}
+
+const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) => {
+  const isPositive = result.sentiment.score > 0;
+  
+  // Mock chart data based on RSI/Signal for visual flair
+  const chartData = Array.from({ length: 20 }, (_, i) => ({
+    name: i,
+    value: 100 + Math.sin(i / 2) * 10 + (result.technicalAnalysis.signal === 'BUY' ? i : -i)
+  }));
+
+  return (
+    <div className="space-y-6">
+      {/* Header Info */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl relative group">
+          <button 
+            onClick={() => onToggleWatchlist(result.ticker)}
+            className={`absolute top-4 right-4 p-2 rounded-lg transition-all ${
+              isWatched ? 'bg-yellow-500/10 text-yellow-500' : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'
+            }`}
+            title={isWatched ? "Remove from Watchlist" : "Add to Watchlist"}
+          >
+            <Star className={`w-4 h-4 ${isWatched ? 'fill-current' : ''}`} />
+          </button>
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-zinc-400 text-xs font-medium uppercase">Ticker</p>
+              <h2 className="text-3xl font-bold text-white mt-1">{result.ticker}</h2>
+            </div>
+            <div className="p-2 bg-emerald-500/10 rounded-lg">
+              <Activity className="w-5 h-5 text-emerald-500" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="text-2xl font-mono text-white">{result.currentPrice}</span>
+            <span className={`text-sm font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+              {result.priceChange}
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl">
+          <p className="text-zinc-400 text-xs font-medium uppercase">Market Vibe</p>
+          <div className="flex items-center gap-4 mt-2">
+            <div className="flex-1 h-3 bg-zinc-800 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-1000 ${isPositive ? 'bg-emerald-500' : 'bg-red-500'}`}
+                style={{ width: `${Math.max(10, Math.abs(result.sentiment.score) * 100)}%`, marginLeft: result.sentiment.score < 0 ? '0' : '50%' }}
+              />
+            </div>
+            <span className="text-lg font-bold text-white">
+              {(result.sentiment.score * 10).toFixed(1)}
+            </span>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            {result.sentiment.score > 0.2 ? (
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
+            ) : result.sentiment.score < -0.2 ? (
+              <TrendingDown className="w-4 h-4 text-red-500" />
+            ) : (
+              <Minus className="w-4 h-4 text-zinc-400" />
+            )}
+            <span className="text-sm text-zinc-300">{result.sentiment.label}</span>
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl">
+          <p className="text-zinc-400 text-xs font-medium uppercase">Current Signal</p>
+          <div className="mt-2">
+            <span className={`text-2xl font-black px-3 py-1 rounded ${
+              result.technicalAnalysis.signal === 'BUY' ? 'bg-emerald-500 text-emerald-950' : 
+              result.technicalAnalysis.signal === 'SELL' ? 'bg-red-500 text-red-950' : 'bg-zinc-700 text-zinc-100'
+            }`}>
+              {result.technicalAnalysis.signal}
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div className="text-zinc-500 uppercase">RSI: <span className="text-zinc-300 font-mono">{result.technicalAnalysis.rsi}</span></div>
+            <div className="text-zinc-500 uppercase">Trend: <span className="text-zinc-300">{result.technicalAnalysis.trend}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Analysis Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl shadow-blue-500/5">
+            <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-2 bg-zinc-900/50">
+              <Sparkles className="w-4 h-4 text-blue-400" />
+              <h3 className="font-semibold text-zinc-200 uppercase text-xs tracking-widest">Simplified Insight</h3>
+            </div>
+            <div className="p-8 prose prose-invert max-w-none">
+              <div className="whitespace-pre-wrap text-zinc-300 leading-relaxed font-sans text-lg">
+                {result.memo}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <BarChart3 className="w-4 h-4 text-purple-400" />
+              <h3 className="font-semibold text-zinc-200">Price Trend Visualization</h3>
+            </div>
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis hide />
+                  <YAxis hide domain={['auto', 'auto']} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
+                    itemStyle={{ color: '#3b82f6' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#3b82f6" 
+                    fillOpacity={1} 
+                    fill="url(#colorValue)" 
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Newspaper className="w-4 h-4 text-zinc-400" />
+              <h3 className="font-semibold text-zinc-200">Where we found this</h3>
+            </div>
+            <div className="space-y-3">
+              {result.sources.length > 0 ? result.sources.map((source, idx) => (
+                <a 
+                  key={idx} 
+                  href={source.uri} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="block p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all group"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-zinc-300 line-clamp-2 leading-tight group-hover:text-white">{source.title}</span>
+                    <ExternalLink className="w-3 h-3 text-zinc-500 shrink-0" />
+                  </div>
+                </a>
+              )) : (
+                <p className="text-zinc-500 text-sm italic">Scanning sources...</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">
+            <h4 className="text-emerald-400 font-bold text-sm mb-2">Smart Summary</h4>
+            <p className="text-xs text-emerald-300/70 leading-relaxed">
+              Our agents scanned {result.sources.length} sources including Reddit and real-time news to build this vibe-check. Remember: social sentiment is volatile!
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
