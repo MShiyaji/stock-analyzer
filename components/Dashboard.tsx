@@ -4,11 +4,12 @@ import { AnalysisResult } from '../types';
 import { 
   TrendingUp, TrendingDown, Minus, 
   ExternalLink, FileText, BarChart3, 
-  Activity, Newspaper, Star, Sparkles
+  Activity, Newspaper, Star, Sparkles,
+  MessageSquare, Quote
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, 
-  CartesianGrid, Tooltip, ResponsiveContainer 
+  CartesianGrid, Tooltip, ResponsiveContainer, Label 
 } from 'recharts';
 
 interface Props {
@@ -25,6 +26,42 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
     name: i,
     value: 100 + Math.sin(i / 2) * 10 + (result.technicalAnalysis.signal === 'BUY' ? i : -i)
   }));
+
+  const renderMemoContent = (memo: string) => {
+    return memo.split('\n').filter(line => line.trim()).map((line, idx) => {
+      // Styled Headers
+      if (line.startsWith('###') || line.startsWith('**')) {
+        return (
+          <h4 key={idx} className="text-zinc-100 font-bold mt-8 mb-3 text-xs uppercase tracking-widest flex items-center gap-2 first:mt-0">
+            <span className="w-1 h-3 bg-blue-500 rounded-full"></span>
+            {line.replace(/[#*]/g, '').trim()}
+          </h4>
+        );
+      }
+
+      // Styled Quote Bubbles
+      if (line.startsWith('>')) {
+        return (
+          <div key={idx} className="my-6 relative pl-10 pr-6 py-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 shadow-xl shadow-orange-500/5 group">
+            <div className="absolute left-3 top-4 w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center shadow-lg shadow-orange-500/20">
+              <MessageSquare className="w-2.5 h-2.5 text-white" />
+            </div>
+            <p className="text-sm italic text-orange-200 leading-relaxed font-medium">
+              {line.replace(/^>\s*/, '').replace(/"/g, '')}
+            </p>
+            <div className="absolute -bottom-1 left-8 w-3 h-3 bg-orange-500/10 border-r border-b border-orange-500/20 rotate-45"></div>
+          </div>
+        );
+      }
+
+      // Standard paragraphs
+      return (
+        <p key={idx} className="text-zinc-300 leading-relaxed mb-4 text-sm font-medium">
+          {line}
+        </p>
+      );
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -105,11 +142,11 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl shadow-blue-500/5">
             <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-2 bg-zinc-900/50">
               <Sparkles className="w-4 h-4 text-blue-400" />
-              <h3 className="font-semibold text-zinc-200 uppercase text-xs tracking-widest">Simplified Insight</h3>
+              <h3 className="font-semibold text-zinc-200 uppercase text-xs tracking-widest">Rapid Insight</h3>
             </div>
-            <div className="p-8 prose prose-invert max-w-none">
-              <div className="whitespace-pre-wrap text-zinc-300 leading-relaxed font-sans text-lg">
-                {result.memo}
+            <div className="p-8">
+              <div className="max-w-2xl mx-auto">
+                {renderMemoContent(result.memo)}
               </div>
             </div>
           </div>
@@ -117,11 +154,11 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
             <div className="flex items-center gap-2 mb-6">
               <BarChart3 className="w-4 h-4 text-purple-400" />
-              <h3 className="font-semibold text-zinc-200">Price Trend Visualization</h3>
+              <h3 className="font-semibold text-zinc-200 text-xs uppercase tracking-widest">Trend Matrix</h3>
             </div>
-            <div className="h-64 w-full">
+            <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 30 }}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -129,11 +166,32 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-                  <XAxis hide />
-                  <YAxis hide domain={['auto', 'auto']} />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="#52525b" 
+                    fontSize={10} 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(val) => `T-${19 - val}`}
+                    dy={10}
+                  >
+                    <Label value="Simulated Time (Ticks)" offset={-20} position="insideBottom" fill="#71717a" fontSize={10} fontWeight={600} />
+                  </XAxis>
+                  <YAxis 
+                    stroke="#52525b" 
+                    fontSize={10} 
+                    tickLine={false} 
+                    axisLine={false}
+                    domain={['auto', 'auto']}
+                    tickFormatter={(val) => `$${val.toFixed(0)}`}
+                    dx={-5}
+                  >
+                    <Label value="Price ($)" angle={-90} position="insideLeft" offset={10} style={{ textAnchor: 'middle' }} fill="#71717a" fontSize={10} fontWeight={600} />
+                  </YAxis>
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
                     itemStyle={{ color: '#3b82f6' }}
+                    labelFormatter={(val) => `Interval ${val}`}
                   />
                   <Area 
                     type="monotone" 
@@ -142,6 +200,7 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
                     fillOpacity={1} 
                     fill="url(#colorValue)" 
                     strokeWidth={2}
+                    animationDuration={1500}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -153,7 +212,7 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
             <div className="flex items-center gap-2 mb-4">
               <Newspaper className="w-4 h-4 text-zinc-400" />
-              <h3 className="font-semibold text-zinc-200">Where we found this</h3>
+              <h3 className="font-semibold text-zinc-200 text-xs uppercase tracking-widest">Grounding Intel</h3>
             </div>
             <div className="space-y-3">
               {result.sources.length > 0 ? result.sources.map((source, idx) => (
@@ -165,7 +224,7 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
                   className="block p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all group"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-zinc-300 line-clamp-2 leading-tight group-hover:text-white">{source.title}</span>
+                    <span className="text-xs text-zinc-300 line-clamp-2 leading-tight group-hover:text-white font-medium">{source.title}</span>
                     <ExternalLink className="w-3 h-3 text-zinc-500 shrink-0" />
                   </div>
                 </a>
@@ -176,9 +235,9 @@ const Dashboard: React.FC<Props> = ({ result, isWatched, onToggleWatchlist }) =>
           </div>
 
           <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">
-            <h4 className="text-emerald-400 font-bold text-sm mb-2">Smart Summary</h4>
-            <p className="text-xs text-emerald-300/70 leading-relaxed">
-              Our agents scanned {result.sources.length} sources including Reddit and real-time news to build this vibe-check. Remember: social sentiment is volatile!
+            <h4 className="text-emerald-400 font-bold text-xs uppercase tracking-wider mb-2">Smart Summary</h4>
+            <p className="text-xs text-emerald-300/70 leading-relaxed font-medium">
+              Analyzed {result.sources.length} intelligence nodes. Social sentiment extracted from live discourse.
             </p>
           </div>
         </div>

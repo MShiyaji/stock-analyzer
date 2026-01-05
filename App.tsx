@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Loader2, Sparkles, TrendingUp, Cpu, Star, Trash2, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Loader2, Sparkles, TrendingUp, Cpu, Star, Trash2, ChevronRight, XCircle } from 'lucide-react';
 import { AgentStatus, AgentStep, AnalysisResult, WatchlistItem } from './types';
 import { performMultiAgentAnalysis } from './services/geminiService';
 import AgentStatusList from './components/AgentStatusList';
@@ -15,10 +15,46 @@ const INITIAL_STEPS: AgentStep[] = [
 ];
 
 const POPULAR_TICKERS = [
-  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'BRK.B', 'V', 'JNJ', 
-  'WMT', 'JPM', 'MA', 'PG', 'UNH', 'HD', 'BAC', 'DIS', 'GME', 'AMC', 
-  'PLTR', 'AMD', 'NFLX', 'PYPL', 'ADBE', 'CRM', 'INTC', 'CMCSA', 'PFE', 'PEP',
-  'COST', 'AVGO', 'T', 'XOM', 'CVX', 'ABBV', 'NKE', 'KO', 'MRK', 'ORCL'
+  { ticker: 'AAPL', name: 'Apple Inc.' },
+  { ticker: 'MSFT', name: 'Microsoft Corporation' },
+  { ticker: 'GOOGL', name: 'Alphabet Inc.' },
+  { ticker: 'AMZN', name: 'Amazon.com Inc.' },
+  { ticker: 'NVDA', name: 'NVIDIA Corporation' },
+  { ticker: 'TSLA', name: 'Tesla Inc.' },
+  { ticker: 'META', name: 'Meta Platforms Inc.' },
+  { ticker: 'BRK.B', name: 'Berkshire Hathaway' },
+  { ticker: 'V', name: 'Visa Inc.' },
+  { ticker: 'JNJ', name: 'Johnson & Johnson' },
+  { ticker: 'WMT', name: 'Walmart Inc.' },
+  { ticker: 'JPM', name: 'JPMorgan Chase & Co.' },
+  { ticker: 'MA', name: 'Mastercard Inc.' },
+  { ticker: 'PG', name: 'Procter & Gamble' },
+  { ticker: 'UNH', name: 'UnitedHealth Group' },
+  { ticker: 'HD', name: 'Home Depot Inc.' },
+  { ticker: 'BAC', name: 'Bank of America' },
+  { ticker: 'DIS', name: 'Walt Disney Co.' },
+  { ticker: 'GME', name: 'GameStop Corp.' },
+  { ticker: 'AMC', name: 'AMC Entertainment' },
+  { ticker: 'PLTR', name: 'Palantir Technologies' },
+  { ticker: 'AMD', name: 'Advanced Micro Devices' },
+  { ticker: 'NFLX', name: 'Netflix Inc.' },
+  { ticker: 'PYPL', name: 'PayPal Holdings' },
+  { ticker: 'ADBE', name: 'Adobe Inc.' },
+  { ticker: 'CRM', name: 'Salesforce Inc.' },
+  { ticker: 'INTC', name: 'Intel Corporation' },
+  { ticker: 'CMCSA', name: 'Comcast Corporation' },
+  { ticker: 'PFE', name: 'Pfizer Inc.' },
+  { ticker: 'PEP', name: 'PepsiCo Inc.' },
+  { ticker: 'COST', name: 'Costco Wholesale' },
+  { ticker: 'AVGO', name: 'Broadcom Inc.' },
+  { ticker: 'T', name: 'AT&T Inc.' },
+  { ticker: 'XOM', name: 'Exxon Mobil Corp.' },
+  { ticker: 'CVX', name: 'Chevron Corporation' },
+  { ticker: 'ABBV', name: 'AbbVie Inc.' },
+  { ticker: 'NKE', name: 'NIKE Inc.' },
+  { ticker: 'KO', name: 'Coca-Cola Company' },
+  { ticker: 'MRK', name: 'Merck & Co. Inc.' },
+  { ticker: 'ORCL', name: 'Oracle Corporation' }
 ];
 
 function App() {
@@ -27,14 +63,32 @@ function App() {
   const [steps, setSteps] = useState<AgentStep[]>(INITIAL_STEPS);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => {
-    const saved = localStorage.getItem('finagent_watchlist');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('finagent_watchlist');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
 
   useEffect(() => {
     localStorage.setItem('finagent_watchlist', JSON.stringify(watchlist));
   }, [watchlist]);
+
+  // Click outside listener for suggestions
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const updateStepStatus = (id: string, status: AgentStatus) => {
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status } : s));
@@ -45,9 +99,13 @@ function App() {
     const targetTicker = (manualTicker || ticker).trim().toUpperCase();
     if (!targetTicker) return;
 
+    // Sync input field if clicked from watchlist or suggestion
+    if (manualTicker) setTicker(manualTicker);
+
     setIsAnalyzing(true);
     setResult(null);
     setError(null);
+    setShowSuggestions(false);
     setSteps(INITIAL_STEPS.map(s => ({ ...s, status: AgentStatus.IDLE })));
 
     try {
@@ -72,6 +130,7 @@ function App() {
       updateStepStatus('memo', AgentStatus.COMPLETED);
       setResult(analysis);
       
+      // Auto-update watchlist if analyzed item exists
       setWatchlist(prev => prev.map(item => 
         item.ticker === analysis.ticker 
           ? { ...item, lastPrice: analysis.currentPrice, lastSentiment: analysis.sentiment.label } 
@@ -97,10 +156,28 @@ function App() {
       return [{ 
         ticker: target, 
         addedAt: Date.now(),
-        lastPrice: result?.ticker === target ? result.currentPrice : undefined,
-        lastSentiment: result?.ticker === target ? result.sentiment.label : undefined
+        lastPrice: (result && result.ticker === target) ? result.currentPrice : undefined,
+        lastSentiment: (result && result.ticker === target) ? result.sentiment.label : undefined
       }, ...prev];
     });
+  };
+
+  const clearWatchlist = () => {
+    if (window.confirm('Clear all items from your watchlist?')) {
+      setWatchlist([]);
+    }
+  };
+
+  const filteredSuggestions = POPULAR_TICKERS.filter(item => 
+    item.ticker.toLowerCase().startsWith(ticker.toLowerCase()) && ticker.length > 0
+  );
+
+  const getSentimentColor = (label?: string) => {
+    if (!label) return 'text-zinc-500';
+    const l = label.toLowerCase();
+    if (l.includes('bullish')) return 'text-emerald-400';
+    if (l.includes('bearish')) return 'text-rose-400';
+    return 'text-zinc-400';
   };
 
   return (
@@ -126,29 +203,54 @@ function App() {
       <main className="flex-1 max-w-7xl mx-auto w-full p-6 space-y-8">
         <section className="space-y-4">
           <div className="max-w-2xl">
-            <h2 className="text-3xl font-bold text-white mb-2">Multi-Agent Intelligence</h2>
+            <h2 className="text-3xl font-bold text-white mb-2 font-sans">Multi-Agent Intelligence</h2>
             <p className="text-zinc-400 text-lg">
               Analyze stocks using institutional data, technical signals, and <span className="text-orange-400 font-semibold italic">Reddit r/wallstreetbets</span> sentiment.
             </p>
           </div>
 
-          <form onSubmit={handleAnalysis} className="flex gap-4 max-w-xl">
-            <div className="relative flex-1">
+          <form onSubmit={handleAnalysis} className="flex gap-4 max-w-xl relative">
+            <div className="relative flex-1" ref={searchRef}>
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
               <input
                 type="text"
-                list="ticker-suggestions"
+                autoComplete="off"
                 placeholder="Enter ticker (e.g. NVDA, TSLA, GME)"
                 value={ticker}
-                onChange={(e) => setTicker(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono uppercase"
+                onChange={(e) => {
+                  setTicker(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono uppercase text-lg"
                 disabled={isAnalyzing}
               />
-              <datalist id="ticker-suggestions">
-                {POPULAR_TICKERS.map(t => (
-                  <option key={t} value={t} />
-                ))}
-              </datalist>
+              
+              {showSuggestions && filteredSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 mt-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-[60] overflow-hidden">
+                  <div className="p-2 max-h-64 overflow-y-auto">
+                    {filteredSuggestions.map((item) => (
+                      <button
+                        key={item.ticker}
+                        type="button"
+                        onClick={() => {
+                          setShowSuggestions(false);
+                          handleAnalysis(undefined, item.ticker);
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-zinc-800 rounded-lg flex items-center justify-between group transition-colors"
+                      >
+                        <div className="flex items-baseline gap-2 overflow-hidden">
+                          <span className="font-mono font-bold text-zinc-100 shrink-0">{item.ticker}</span>
+                          <span className="font-sans italic text-zinc-500 text-xs truncate group-hover:text-zinc-400 transition-colors">
+                            {item.name}
+                          </span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-blue-500 transition-colors shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <button
               type="submit"
@@ -158,12 +260,12 @@ function App() {
               {isAnalyzing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Orchestrating Agents...
+                  Orchestrating...
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  Analyze Market
+                  Analyze
                 </>
               )}
             </button>
@@ -172,46 +274,77 @@ function App() {
 
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
           <aside className="xl:col-span-1 space-y-6">
-            <div id="watchlist" className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                <h3 className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Watchlist</h3>
-                <Star className="w-3.5 h-3.5 text-zinc-500" />
+            <div id="watchlist" className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden flex flex-col h-full max-h-[600px]">
+              <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+                <h3 className="text-zinc-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                  <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+                  Watchlist
+                </h3>
+                {watchlist.length > 0 && (
+                  <button 
+                    onClick={clearWatchlist}
+                    className="text-[10px] text-zinc-600 hover:text-rose-400 font-bold uppercase tracking-tighter transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
               </div>
-              <div className="max-h-[300px] overflow-y-auto divide-y divide-zinc-800">
-                {watchlist.length > 0 ? watchlist.map((item) => (
-                  <div key={item.ticker} className="group flex items-center justify-between p-4 hover:bg-zinc-800/50 transition-colors">
-                    <button 
-                      onClick={() => handleAnalysis(undefined, item.ticker)}
-                      disabled={isAnalyzing}
-                      className="flex-1 text-left flex items-center gap-3"
+              <div className="flex-1 overflow-y-auto divide-y divide-zinc-800 custom-scrollbar">
+                {watchlist.length > 0 ? watchlist.map((item) => {
+                  const isActive = result?.ticker === item.ticker;
+                  return (
+                    <div 
+                      key={item.ticker} 
+                      className={`group flex items-center justify-between p-4 transition-all relative ${
+                        isActive ? 'bg-blue-600/10' : 'hover:bg-zinc-800/50'
+                      }`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center font-bold text-xs text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                        {item.ticker[0]}
-                      </div>
-                      <div>
-                        <div className="font-bold text-zinc-200 flex items-center gap-2">
-                          {item.ticker}
-                          <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6)]"></div>}
+                      <button 
+                        onClick={() => handleAnalysis(undefined, item.ticker)}
+                        disabled={isAnalyzing}
+                        className="flex-1 text-left flex items-center gap-3 overflow-hidden"
+                      >
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs transition-all shrink-0 ${
+                          isActive 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-zinc-800 text-blue-400 group-hover:bg-zinc-700'
+                        }`}>
+                          {item.ticker[0]}
                         </div>
-                        {item.lastPrice && (
-                          <div className="text-[10px] text-zinc-500 flex gap-2">
-                            <span>{item.lastPrice}</span>
-                            <span className="text-zinc-600">•</span>
-                            <span>{item.lastSentiment}</span>
+                        <div className="overflow-hidden">
+                          <div className={`font-bold flex items-center gap-2 ${isActive ? 'text-white' : 'text-zinc-200'}`}>
+                            {item.ticker}
+                            {isActive && <ActivityStatusPulse />}
                           </div>
-                        )}
-                      </div>
-                    </button>
-                    <button 
-                      onClick={() => toggleWatchlist(item.ticker)}
-                      className="p-2 opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )) : (
-                  <div className="p-8 text-center text-zinc-600 text-xs italic">
-                    Your watchlist is empty.
+                          <div className="flex flex-col mt-0.5">
+                            <span className="text-[11px] font-mono text-zinc-400 leading-none">
+                              {item.lastPrice || '---'}
+                            </span>
+                            <span className={`text-[10px] font-bold uppercase tracking-tight mt-1 truncate ${getSentimentColor(item.lastSentiment)}`}>
+                              {item.lastSentiment || 'No Data'}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleWatchlist(item.ticker);
+                        }}
+                        title="Remove from watchlist"
+                        className="p-2 opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all ml-2"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                }) : (
+                  <div className="p-12 text-center space-y-3">
+                    <Star className="w-8 h-8 text-zinc-800 mx-auto" />
+                    <p className="text-zinc-600 text-xs italic leading-relaxed">
+                      Your watchlist is empty.<br/>Analyze a stock and click the star icon to track it here.
+                    </p>
                   </div>
                 )}
               </div>
@@ -224,7 +357,7 @@ function App() {
                 <Cpu className="w-4 h-4" />
                 <span className="text-xs font-bold uppercase tracking-wider">Engine Status</span>
               </div>
-              <p className="text-xs text-zinc-400 leading-relaxed">
+              <p className="text-xs text-zinc-400 leading-relaxed font-medium">
                 Powered by <span className="text-zinc-200">Gemini 3 Pro</span>. 
                 Utilizing decentralized retrieval for news and <span className="text-orange-400">Social Intel</span>.
               </p>
@@ -233,16 +366,30 @@ function App() {
 
           <div className="xl:col-span-3">
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-xl text-red-400">
-                <p className="font-bold mb-1">Analysis Failed</p>
+              <div className="bg-rose-500/10 border border-rose-500/20 p-6 rounded-xl text-rose-400 animate-in fade-in slide-in-from-top-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="w-5 h-5" />
+                  <p className="font-bold">Analysis Failed</p>
+                </div>
                 <p className="text-sm">{error}</p>
               </div>
             )}
 
             {!result && !isAnalyzing && !error && (
-              <div className="h-96 border-2 border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-zinc-600">
-                <TrendingUp className="w-12 h-12 mb-4 opacity-20" />
-                <p>Enter a ticker (e.g. GME, TSLA) to trigger the multi-agent hive mind.</p>
+              <div className="h-96 border-2 border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-zinc-600 group hover:border-zinc-700 transition-colors">
+                <TrendingUp className="w-12 h-12 mb-4 opacity-20 group-hover:opacity-40 transition-opacity" />
+                <p className="text-sm font-medium">Enter a ticker to trigger the multi-agent hive mind.</p>
+                <div className="mt-6 flex gap-2">
+                  {['NVDA', 'TSLA', 'GME'].map(t => (
+                    <button 
+                      key={t}
+                      onClick={() => handleAnalysis(undefined, t)}
+                      className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[10px] font-bold hover:border-blue-500 hover:text-blue-400 transition-all uppercase"
+                    >
+                      Try {t}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -253,8 +400,8 @@ function App() {
                   <div className="w-24 h-24 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
                 <div className="text-center">
-                  <p className="text-lg font-medium text-white">Aggregating Social Signals</p>
-                  <p className="text-sm text-zinc-500 italic">"Checking r/wallstreetbets sentiment..."</p>
+                  <p className="text-lg font-medium text-white tracking-tight">Aggregating Social Signals</p>
+                  <p className="text-sm text-zinc-500 italic mt-1 animate-pulse">"Checking r/wallstreetbets sentiment..."</p>
                 </div>
               </div>
             )}
@@ -270,11 +417,18 @@ function App() {
         </div>
       </main>
 
-      <footer className="border-t border-zinc-800 py-8 px-6 text-center text-zinc-600 text-xs">
-        <p>© 2024 FinAgent Pro Intelligence System. Social data sourced from r/wallstreetbets discussions via Gemini Grounding.</p>
+      <footer className="border-t border-zinc-800 py-8 px-6 text-center text-zinc-600 text-[10px] font-medium uppercase tracking-widest">
+        <p>© 2024 FinAgent Pro Intelligence System. Social data sourced via Gemini Search Grounding.</p>
       </footer>
     </div>
   );
 }
+
+const ActivityStatusPulse = () => (
+  <span className="relative flex h-2 w-2">
+    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+  </span>
+);
 
 export default App;

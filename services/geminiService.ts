@@ -34,6 +34,8 @@ export const performMultiAgentAnalysis = async (
   
   const redditPrompt = `Search specifically on Reddit, especially r/wallstreetbets, for the ticker ${ticker}. 
   Identify the current "vibe" or sentiment among retail traders. Look for:
+  - Specific, direct quotes or paraphrased highlights from recent posts and comments about ${ticker}.
+  - If there is very little discussion or almost no posts specifically referencing ${ticker}, explicitly note: "Low discussion volume detected for this ticker."
   - Is it a trending topic?
   - Are there major "YOLO" positions mentioned?
   - What are the main bullish and bearish arguments being discussed currently?
@@ -108,19 +110,23 @@ export const performMultiAgentAnalysis = async (
 
   const technical = JSON.parse(technicalResponse.text);
 
-  // 5. Synthesis Engine - UPDATED for simple explanation
+  // 5. Synthesis Engine
   onProgress('Synthesizing market insight for you...');
   
   const memoResponse = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `Explain the current status of ${ticker} for an average retail trader. 
-    Avoid heavy financial jargon. Be conversational but clear.
     
-    Break the explanation down into these headers:
-    1. The General Vibe (What is the overall sentiment?)
-    2. What the Pros are Saying (Summarize news and analyst outlook)
-    3. The Reddit Buzz (Specifically cite what r/wallstreetbets is currently saying)
-    4. The Game Plan (What the technical signals like RSI and MACD mean for the trade right now)
+    CRITICAL INSTRUCTIONS:
+    - BE EXTREMELY BRIEF. Maximum 1-2 sentences per section.
+    - Use Markdown headers (e.g., ### Section Name).
+    - Use Markdown blockquotes (starting with >) for ANY specific Reddit quotes or highlights.
+    
+    Break down into:
+    ### 1. General Vibe
+    ### 2. The Pros' View
+    ### 3. Reddit Buzz (Cite specific quotes with > "quote here" or note low volume)
+    ### 4. Game Plan (Technical summary)
 
     Inputs:
     - Market/Analyst Data: ${rawMarketData}
@@ -128,7 +134,7 @@ export const performMultiAgentAnalysis = async (
     - Aggregated Sentiment: ${sentiment.label}
     - Technical Signal: ${technical.signal} (${technical.trend})`,
     config: {
-      systemInstruction: "You are a friendly but knowledgeable trading mentor. You explain complex market movements in simple terms that a casual trader can understand. You focus on the 'vibe' and the 'why' rather than just numbers."
+      systemInstruction: "You are a brief, direct trading mentor. You never use more words than necessary. You wrap every Reddit quote in a markdown blockquote (>). If social volume is low, you say exactly that in one short sentence."
     }
   });
 
