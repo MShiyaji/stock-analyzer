@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Loader2, Sparkles, TrendingUp, Cpu, Star, Trash2, ChevronRight, XCircle } from 'lucide-react';
-import { AgentStatus, AgentStep, AnalysisResult, WatchlistItem } from './types';
-import { performMultiAgentAnalysis } from './src/services/geminiService';
-import AgentStatusList from './components/AgentStatusList';
-import Dashboard from './components/Dashboard';
+import { Search, Loader2, Sparkles, TrendingUp, Star, Trash2, ChevronRight, XCircle } from 'lucide-react';
+import { AgentStatus, AgentStep, AnalysisResult, WatchlistItem, AnalysisStage } from '../types';
+import { performMultiAgentAnalysis } from './services/geminiService';
+import AgentStatusList from '../components/AgentStatusList';
+import Dashboard from '../components/Dashboard';
 
 type TickerDirectoryEntry = {
   ticker: string;
@@ -15,7 +15,7 @@ const log = (...args: any[]) => console.log('[FinAgent]', ...args);
 
 const INITIAL_STEPS: AgentStep[] = [
   { id: 'search', name: 'Data Harvester', description: 'Retrieving news and price data', status: AgentStatus.IDLE },
-  { id: 'reddit', name: 'Reddit Intel', description: 'Scanning r/wallstreetbets for retail sentiment', status: AgentStatus.IDLE },
+  { id: 'reddit', name: 'Social Intel', description: 'Scanning Reddit, StockTwits & HN', status: AgentStatus.IDLE },
   { id: 'sentiment', name: 'Sentiment Analyst', description: 'Aggregating market and social tone', status: AgentStatus.IDLE },
   { id: 'technicals', name: 'Quant Agent', description: 'Simulating technical indicators', status: AgentStatus.IDLE },
   { id: 'memo', name: 'Synthesis Engine', description: 'Drafting final investment memo', status: AgentStatus.IDLE },
@@ -74,7 +74,7 @@ function App() {
   const searchRef = useRef<HTMLDivElement>(null);
   const [availableTickers, setAvailableTickers] = useState<TickerDirectoryEntry[]>(FALLBACK_TICKERS);
   const [isTickerListLoading, setIsTickerListLoading] = useState(true);
-  
+
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => {
     try {
       const saved = localStorage.getItem('finagent_watchlist');
@@ -158,31 +158,44 @@ function App() {
     setSteps(INITIAL_STEPS.map(s => ({ ...s, status: AgentStatus.IDLE })));
 
     try {
-      updateStepStatus('search', AgentStatus.RUNNING);
-      
-      const analysis = await performMultiAgentAnalysis(targetTicker, (progressMsg) => {
-        if (progressMsg.includes('Scraping r/wallstreetbets')) {
-          updateStepStatus('search', AgentStatus.COMPLETED);
-          updateStepStatus('reddit', AgentStatus.RUNNING);
-        } else if (progressMsg.includes('Analyzing market & social')) {
-          updateStepStatus('reddit', AgentStatus.COMPLETED);
-          updateStepStatus('sentiment', AgentStatus.RUNNING);
-        } else if (progressMsg.includes('Calculating technical')) {
-          updateStepStatus('sentiment', AgentStatus.COMPLETED);
-          updateStepStatus('technicals', AgentStatus.RUNNING);
-        } else if (progressMsg.includes('Synthesizing professional')) {
-          updateStepStatus('technicals', AgentStatus.COMPLETED);
-          updateStepStatus('memo', AgentStatus.RUNNING);
+      const stageHandler = (stage: AnalysisStage) => {
+        switch (stage) {
+          case AnalysisStage.SEARCH:
+            updateStepStatus('search', AgentStatus.RUNNING);
+            break;
+          case AnalysisStage.REDDIT:
+            updateStepStatus('search', AgentStatus.COMPLETED);
+            updateStepStatus('reddit', AgentStatus.RUNNING);
+            break;
+          case AnalysisStage.TECHNICALS:
+            // Reddit is done when Technicals starts (in parallel initiation, it's virtually simultaneous, but for UI flow)
+            updateStepStatus('reddit', AgentStatus.COMPLETED);
+            // Sentiment step is conceptually part of Reddit/Narrator now, so we can mark it done or merge it. 
+            // Let's keep 'sentiment' step as a placeholder for the "Analysis" phase if we want, or just Auto-complete it.
+            updateStepStatus('sentiment', AgentStatus.COMPLETED);
+            updateStepStatus('technicals', AgentStatus.RUNNING);
+            break;
+          case AnalysisStage.MEMO:
+            updateStepStatus('technicals', AgentStatus.COMPLETED);
+            updateStepStatus('memo', AgentStatus.RUNNING);
+            break;
+          default:
+            break;
         }
-      });
+      };
+
+      const companyInfo = availableTickers.find(t => t.ticker === targetTicker);
+      const companyName = companyInfo ? companyInfo.name : undefined;
+
+      const analysis = await performMultiAgentAnalysis(targetTicker, companyName, stageHandler);
 
       updateStepStatus('memo', AgentStatus.COMPLETED);
       setResult(analysis);
-      
+
       // Auto-update watchlist if analyzed item exists
-      setWatchlist(prev => prev.map(item => 
-        item.ticker === analysis.ticker 
-          ? { ...item, lastPrice: analysis.currentPrice, lastSentiment: analysis.sentiment.label } 
+      setWatchlist(prev => prev.map(item =>
+        item.ticker === analysis.ticker
+          ? { ...item, lastPrice: analysis.currentPrice, lastSentiment: analysis.sentiment.label }
           : item
       ));
 
@@ -203,8 +216,8 @@ function App() {
       if (exists) {
         return prev.filter(i => i.ticker !== target);
       }
-      return [{ 
-        ticker: target, 
+      return [{
+        ticker: target,
         addedAt: Date.now(),
         lastPrice: (result && result.ticker === target) ? result.currentPrice : undefined,
         lastSentiment: (result && result.ticker === target) ? result.sentiment.label : undefined
@@ -220,9 +233,9 @@ function App() {
 
   const filteredSuggestions = ticker.length > 0
     ? availableTickers.filter(item =>
-        item.ticker.toLowerCase().startsWith(ticker.toLowerCase()) ||
-        item.name.toLowerCase().includes(ticker.toLowerCase())
-      )
+      item.ticker.toLowerCase().startsWith(ticker.toLowerCase()) ||
+      item.name.toLowerCase().includes(ticker.toLowerCase())
+    )
     : [];
 
   const getSentimentColor = (label?: string) => {
@@ -242,7 +255,7 @@ function App() {
               <TrendingUp className="w-5 h-5 text-white" />
             </div>
             <h1 className="text-xl font-bold tracking-tight">
-              FinAgent <span className="text-blue-500 font-light">Pro</span>
+              Ticker<span className="text-blue-500 font-light">Vibes</span>
             </h1>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-400">
@@ -256,7 +269,7 @@ function App() {
       <main className="flex-1 max-w-7xl mx-auto w-full p-6 space-y-8">
         <section className="space-y-4">
           <div className="max-w-2xl">
-            <h2 className="text-3xl font-bold text-white mb-2 font-sans">Multi-Agent Intelligence</h2>
+            <h2 className="text-3xl font-bold text-white mb-2 font-sans">What are the Vibes looking like?</h2>
             <p className="text-zinc-400 text-lg">
               Analyze stocks using institutional data, technical signals, and <span className="text-orange-400 font-semibold italic">Reddit r/wallstreetbets</span> sentiment.
             </p>
@@ -278,7 +291,7 @@ function App() {
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono uppercase text-lg"
                 disabled={isAnalyzing}
               />
-              
+
               {showSuggestions && ticker.trim().length > 0 && (
                 <div className="absolute left-0 right-0 mt-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-[60] overflow-hidden">
                   <div className="p-2 max-h-64 overflow-y-auto">
@@ -343,7 +356,7 @@ function App() {
                   Watchlist
                 </h3>
                 {watchlist.length > 0 && (
-                  <button 
+                  <button
                     onClick={clearWatchlist}
                     className="text-[10px] text-zinc-600 hover:text-rose-400 font-bold uppercase tracking-tighter transition-colors"
                   >
@@ -355,23 +368,21 @@ function App() {
                 {watchlist.length > 0 ? watchlist.map((item) => {
                   const isActive = result?.ticker === item.ticker;
                   return (
-                    <div 
-                      key={item.ticker} 
-                      className={`group flex items-center justify-between p-4 transition-all relative ${
-                        isActive ? 'bg-blue-600/10' : 'hover:bg-zinc-800/50'
-                      }`}
+                    <div
+                      key={item.ticker}
+                      className={`group flex items-center justify-between p-4 transition-all relative ${isActive ? 'bg-blue-600/10' : 'hover:bg-zinc-800/50'
+                        }`}
                     >
                       {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6)]"></div>}
-                      <button 
+                      <button
                         onClick={() => handleAnalysis(undefined, item.ticker)}
                         disabled={isAnalyzing}
                         className="flex-1 text-left flex items-center gap-3 overflow-hidden"
                       >
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs transition-all shrink-0 ${
-                          isActive 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-zinc-800 text-blue-400 group-hover:bg-zinc-700'
-                        }`}>
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs transition-all shrink-0 ${isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-zinc-800 text-blue-400 group-hover:bg-zinc-700'
+                          }`}>
                           {item.ticker[0]}
                         </div>
                         <div className="overflow-hidden">
@@ -389,7 +400,7 @@ function App() {
                           </div>
                         </div>
                       </button>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleWatchlist(item.ticker);
@@ -405,7 +416,7 @@ function App() {
                   <div className="p-12 text-center space-y-3">
                     <Star className="w-8 h-8 text-zinc-800 mx-auto" />
                     <p className="text-zinc-600 text-xs italic leading-relaxed">
-                      Your watchlist is empty.<br/>Analyze a stock and click the star icon to track it here.
+                      Your watchlist is empty.<br />Analyze a stock and click the star icon to track it here.
                     </p>
                   </div>
                 )}
@@ -413,17 +424,8 @@ function App() {
             </div>
 
             <AgentStatusList steps={steps} />
-            
-            <div className="p-6 bg-blue-600/5 border border-blue-500/20 rounded-xl">
-              <div className="flex items-center gap-2 text-blue-400 mb-2">
-                <Cpu className="w-4 h-4" />
-                <span className="text-xs font-bold uppercase tracking-wider">Engine Status</span>
-              </div>
-              <p className="text-xs text-zinc-400 leading-relaxed font-medium">
-                Powered by <span className="text-zinc-200">Gemini 3 Pro</span>. 
-                Utilizing decentralized retrieval for news and <span className="text-orange-400">Social Intel</span>.
-              </p>
-            </div>
+
+
           </aside>
 
           <div className="xl:col-span-3">
@@ -440,10 +442,10 @@ function App() {
             {!result && !isAnalyzing && !error && (
               <div className="h-96 border-2 border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center text-zinc-600 group hover:border-zinc-700 transition-colors">
                 <TrendingUp className="w-12 h-12 mb-4 opacity-20 group-hover:opacity-40 transition-opacity" />
-                <p className="text-sm font-medium">Enter a ticker to trigger the multi-agent hive mind.</p>
+                <p className="text-sm font-medium">Enter a ticker.</p>
                 <div className="mt-6 flex gap-2">
                   {['NVDA', 'TSLA', 'GME'].map(t => (
-                    <button 
+                    <button
                       key={t}
                       onClick={() => handleAnalysis(undefined, t)}
                       className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[10px] font-bold hover:border-blue-500 hover:text-blue-400 transition-all uppercase"
@@ -463,14 +465,14 @@ function App() {
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-medium text-white tracking-tight">Aggregating Social Signals</p>
-                  <p className="text-sm text-zinc-500 italic mt-1 animate-pulse">"Checking r/wallstreetbets sentiment..."</p>
+                  <p className="text-sm text-zinc-500 italic mt-1 animate-pulse">"Combining expert analysis with vibes"</p>
                 </div>
               </div>
             )}
 
             {result && (
-              <Dashboard 
-                result={result} 
+              <Dashboard
+                result={result}
                 isWatched={watchlist.some(i => i.ticker === result.ticker)}
                 onToggleWatchlist={toggleWatchlist}
               />
@@ -478,10 +480,6 @@ function App() {
           </div>
         </div>
       </main>
-
-      <footer className="border-t border-zinc-800 py-8 px-6 text-center text-zinc-600 text-[10px] font-medium uppercase tracking-widest">
-        <p>© 2024 FinAgent Pro Intelligence System. Social data sourced via Gemini Search Grounding.</p>
-      </footer>
     </div>
   );
 }

@@ -15,6 +15,7 @@ export interface AnalysisResult {
     score: number; // -1 to 1
     label: string;
     summary: string;
+    socialVolume?: number[];
   };
   technicalAnalysis: {
     rsi: number;
@@ -39,4 +40,13 @@ export interface WatchlistItem {
   lastPrice?: string;
   lastSentiment?: string;
   addedAt: number;
+}
+
+export enum AnalysisStage {
+  SEARCH = 'SEARCH',
+  REDDIT = 'REDDIT',
+  SENTIMENT = 'SENTIMENT',
+  TECHNICALS = 'TECHNICALS',
+  AGENT_DISCUSSION = 'AGENT_DISCUSSION',
+  MEMO = 'MEMO'
 }
