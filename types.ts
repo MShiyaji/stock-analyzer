@@ -45,8 +45,6 @@ export interface WatchlistItem {
 export enum AnalysisStage {
   SEARCH = 'SEARCH',
   REDDIT = 'REDDIT',
-  SENTIMENT = 'SENTIMENT',
   TECHNICALS = 'TECHNICALS',
-  AGENT_DISCUSSION = 'AGENT_DISCUSSION',
   MEMO = 'MEMO'
 }

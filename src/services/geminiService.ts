@@ -5,6 +5,7 @@ import { RunnableSequence } from "@langchain/core/runnables";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { AnalysisResult, AnalysisStage } from "../../types";
 import { RateLimiter } from "./rateLimiter";
+import { searchReddit, formatRedditForPrompt, isRedditConfigured } from "./redditService";
 
 type WebSource = { title: string; url: string; snippet?: string; published_date?: string };
 
@@ -79,12 +80,14 @@ const webSearch = async (query: string, options?: { domains?: string[], days?: n
 const formatSourcesForPrompt = (hits: WebSource[]) =>
   hits.map((hit, idx) => `(${idx + 1}) ${hit.title}\nDate: ${hit.published_date || "Unknown"}\n${hit.url}\n${hit.snippet || ""}`).join("\n\n");
 
-const stripJson = (value: string) => value.trim().replace(/^```json/i, "").replace(/```$/i, "");
+const stripJson = (value: string) => value.trim().replace(/^```json/i, "").replace(/```$/i, "").replace(/^```/i, "");
 const safeJson = <T>(value: string, fallback: T): T => {
   try {
-    return JSON.parse(stripJson(value)) as T;
+    const cleaned = stripJson(value);
+    return JSON.parse(cleaned) as T;
   } catch (err) {
-    console.warn("JSON parse failed", err);
+    console.warn("JSON parse failed. Raw LLM output:", value.slice(0, 500));
+    console.warn("Parse error:", err);
     return fallback;
   }
 };
@@ -146,21 +149,37 @@ export const performMultiAgentAnalysis = async (
     const marketContext = formatSourcesForPrompt(marketHits);
 
     onProgress(AnalysisStage.REDDIT);
-    // Tiered Search: Try last 30 days first, then fallback to 90
-    let redditHits = await webSearch(`${upperTicker} ${searchName} stock sentiment discussion`, {
-      domains: ['reddit.com', 'stocktwits.com', 'news.ycombinator.com'],
-      days: 30
-    });
 
-    if (redditHits.length === 0) {
-      runLog("reddit-search-fallback", { message: "No recent posts found (30d), trying 90d" });
-      redditHits = await webSearch(`${upperTicker} ${searchName} stock sentiment discussion`, {
-        domains: ['reddit.com', 'stocktwits.com', 'news.ycombinator.com'],
-        days: 90
-      });
+    // PRIMARY SOURCE: Direct Reddit API
+    let redditApiResults: any[] = [];
+    let redditContext = '';
+
+    if (isRedditConfigured()) {
+      runLog("reddit-api-search", { message: "Searching Reddit API directly" });
+      redditApiResults = await searchReddit(upperTicker, searchName, { limit: 8, timeFilter: 'month' });
+
+      if (redditApiResults.length === 0) {
+        runLog("reddit-api-fallback", { message: "No results in month, trying year" });
+        redditApiResults = await searchReddit(upperTicker, searchName, { limit: 8, timeFilter: 'year' });
+      }
+
+      redditContext = formatRedditForPrompt(redditApiResults);
+      runLog("reddit-api-results", { count: redditApiResults.length });
     }
 
-    const redditContext = formatSourcesForPrompt(redditHits);
+    // FALLBACK: Tavily for StockTwits/HN (only if Reddit yields < 3 results)
+    let supplementaryHits: WebSource[] = [];
+    if (redditApiResults.length < 3) {
+      runLog("supplementary-search", { message: "Reddit insufficient, adding StockTwits/HN" });
+      supplementaryHits = await webSearch(`${upperTicker} ${searchName} stock sentiment discussion`, {
+        domains: ['stocktwits.com', 'news.ycombinator.com'],
+        days: 30
+      });
+
+      if (supplementaryHits.length > 0) {
+        redditContext += '\n\n--- SUPPLEMENTARY SOURCES (StockTwits/HN) ---\n' + formatSourcesForPrompt(supplementaryHits);
+      }
+    }
 
     // 2. Agents: Parallel Analysis (JSON)
     onProgress(AnalysisStage.REDDIT);
@@ -168,17 +187,18 @@ export const performMultiAgentAnalysis = async (
     // Reddit Agent - Strict JSON
     const redditAgentPromise = executeChain(
       "reddit-analysis",
-      `You are the "Social Sentiment Expert". You analyze Reddit, StockTwits, and Hacker News.
+      `You are the "Social Sentiment Expert". You analyze social platforms with REDDIT as your PRIMARY source.
         
-        SOCIAL INTEL:
+        SOCIAL INTEL (Reddit is PRIMARY, others are supplementary):
         {redditContext}
         
         Your Goal: Analyze the sentiment for: {upperTicker} (${searchName}).
         
         CRITICAL FILTERING RULES:
         1. **Strict Relevance**: IGNORE any post that does not explicitly mention "{upperTicker}" or "${searchName}". If you are unsure if a post is about this specific stock, DISCARD IT. Err on the side of irrelevance.
-        2. **User Content Only**: Prioritize genuine user discussions. Do NOT use news headlines.
-        3. **Recency**: Prioritize posts from the last month.
+        2. **Reddit Priority**: STRONGLY prefer Reddit discussions over StockTwits or HN. Reddit is your PRIMARY source.
+        3. **User Content Only**: Prioritize genuine user discussions. Do NOT use news headlines.
+        4. **Recency**: Prioritize posts from the last month.
         
         Return strictly valid JSON (no markdown formatting):
         {{
@@ -186,9 +206,9 @@ export const performMultiAgentAnalysis = async (
             "label": "Bullish" | "Bearish" | "Neutral",
             "summary": "Strictly one short sentence summary of the social vibe (max 10 words)",
             "quotes": [
-                {{ "text": "quote 1 text", "url": "url_from_intel_or_blank" }},
-                {{ "text": "quote 2 text", "url": "url_from_intel_or_blank" }}
-            ] (2-3 distinct, short, relevant quotes from ACTUAL USER DISCUSSIONS. Do NOT use news headlines or articles. Only use genuine Reddit comments/posts or StockTwits user messages. IF NO RELEVANT USER POSTS FOUND: Return an empty array []),
+                {{ "text": "quote 1 text", "url": "REQUIRED: full URL to the source post" }},
+                {{ "text": "quote 2 text", "url": "REQUIRED: full URL to the source post" }}
+            ] (2-3 DISTINCT quotes from DIFFERENT posts/articles. CRITICAL: Each quote MUST have a different URL - never use the same source twice. URLs are REQUIRED. Only use genuine user discussions, NOT news headlines. IF NO RELEVANT USER POSTS FOUND: Return an empty array []),
             "social_volume_weekly": [number, number, number, number, number, number, number, number] (Estimate relative discussion intensity for last 8 weeks, 0-100. Week 8 is current week.)
         }}`,
       { redditContext, upperTicker, searchName },
@@ -232,6 +252,23 @@ export const performMultiAgentAnalysis = async (
       quotes: [] as { text: string; url: string }[],
       social_volume_weekly: [0, 0, 0, 0, 0, 0, 0, 0]
     });
+
+    // Deduplicate quotes: keep only one quote per unique URL, filter out empty URLs
+    const seenUrls = new Set<string>();
+    const dedupedQuotes = (redditResult.quotes || []).filter(q => {
+      if (!q.url || q.url.trim() === '' || q.url === 'url_from_intel_or_blank') {
+        runLog("quote-filtered", { reason: "missing URL", text: q.text?.slice(0, 50) });
+        return false;
+      }
+      const normalizedUrl = q.url.toLowerCase().trim();
+      if (seenUrls.has(normalizedUrl)) {
+        runLog("quote-filtered", { reason: "duplicate URL", url: q.url });
+        return false;
+      }
+      seenUrls.add(normalizedUrl);
+      return true;
+    });
+    redditResult.quotes = dedupedQuotes;
 
     const technicalResult = safeJson(technicalRaw, {
       rsi: 50,
@@ -300,9 +337,11 @@ export const performMultiAgentAnalysis = async (
     const memo = await memoPromise;
 
     // Collect Sources
-    const allSources = [...marketHits, ...redditHits]
-      .slice(0, 10)
-      .map(s => ({ title: s.title, uri: s.url }));
+    // Combine sources: Reddit API results + market hits + supplementary
+    const redditSources = redditApiResults.map(r => ({ title: `[r/${r.subreddit}] ${r.title}`, uri: r.url }));
+    const supplementarySources = supplementaryHits.map(s => ({ title: s.title, uri: s.url }));
+    const marketSources = marketHits.map(s => ({ title: s.title, uri: s.url }));
+    const allSources = [...redditSources, ...marketSources, ...supplementarySources].slice(0, 10);
 
     const result: AnalysisResult = {
       ticker: upperTicker,

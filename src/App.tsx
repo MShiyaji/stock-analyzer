@@ -14,10 +14,9 @@ type TickerDirectoryEntry = {
 const log = (...args: any[]) => console.log('[FinAgent]', ...args);
 
 const INITIAL_STEPS: AgentStep[] = [
-  { id: 'search', name: 'Data Harvester', description: 'Retrieving news and price data', status: AgentStatus.IDLE },
-  { id: 'reddit', name: 'Social Intel', description: 'Scanning Reddit, StockTwits & HN', status: AgentStatus.IDLE },
-  { id: 'sentiment', name: 'Sentiment Analyst', description: 'Aggregating market and social tone', status: AgentStatus.IDLE },
-  { id: 'technicals', name: 'Quant Agent', description: 'Simulating technical indicators', status: AgentStatus.IDLE },
+  { id: 'search', name: 'Data Harvester', description: 'Retrieving market news and price data', status: AgentStatus.IDLE },
+  { id: 'reddit', name: 'Reddit Intel', description: 'Scanning r/wallstreetbets, r/stocks & more', status: AgentStatus.IDLE },
+  { id: 'technicals', name: 'Quant Agent', description: 'Analyzing technical indicators', status: AgentStatus.IDLE },
   { id: 'memo', name: 'Synthesis Engine', description: 'Drafting final investment memo', status: AgentStatus.IDLE },
 ];
 
@@ -168,11 +167,8 @@ function App() {
             updateStepStatus('reddit', AgentStatus.RUNNING);
             break;
           case AnalysisStage.TECHNICALS:
-            // Reddit is done when Technicals starts (in parallel initiation, it's virtually simultaneous, but for UI flow)
+            // Reddit agent is done when Technicals starts
             updateStepStatus('reddit', AgentStatus.COMPLETED);
-            // Sentiment step is conceptually part of Reddit/Narrator now, so we can mark it done or merge it. 
-            // Let's keep 'sentiment' step as a placeholder for the "Analysis" phase if we want, or just Auto-complete it.
-            updateStepStatus('sentiment', AgentStatus.COMPLETED);
             updateStepStatus('technicals', AgentStatus.RUNNING);
             break;
           case AnalysisStage.MEMO:
